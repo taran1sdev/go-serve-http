@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+
+	"boot.taran1s/internal/headers"
 )
 
 type RequestLine struct {
@@ -19,13 +21,14 @@ func (r *RequestLine) ValidHTTP() bool {
 type Request struct {
 	RequestLine RequestLine
 	State       parserState
-	Headers     map[string]string
+	Headers     headers.Headers
 	Body        []byte
 }
 
 func newRequest() *Request {
 	return &Request{
-		State: StateInit,
+		State:   StateInit,
+		Headers: *headers.NewHeaders(),
 	}
 }
 
@@ -37,9 +40,10 @@ var SEPARATOR = []byte("\r\n")
 type parserState int
 
 const (
-	StateInit  parserState = 0
-	StateDone  parserState = 1
-	StateError parserState = 2
+	StateInit    parserState = 0
+	StateHeaders parserState = 1
+	StateDone    parserState = 2
+	StateError   parserState = 3
 )
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
@@ -78,11 +82,15 @@ func (r *Request) parse(data []byte) (int, error) {
 	read := 0
 outer:
 	for {
+		currentData := data[read:]
+
 		switch r.State {
 		case StateError:
+
 			return 0, REQUEST_IN_ERROR_STATE
 		case StateInit:
-			rl, n, err := parseRequestLine(data[read:])
+
+			rl, n, err := parseRequestLine(currentData)
 			if err != nil {
 				return 0, err
 			}
@@ -94,10 +102,27 @@ outer:
 			r.RequestLine = *rl
 			read += n
 
-			r.State = StateDone
+			r.State = StateHeaders
+		case StateHeaders:
 
+			n, done, err := r.Headers.Parse(currentData)
+			if err != nil {
+				return 0, err
+			}
+
+			if n == 0 {
+				break outer
+			}
+
+			read += n
+
+			if done {
+				r.State = StateDone
+			}
 		case StateDone:
 			break outer
+		default:
+			panic("Something went wrong...")
 		}
 	}
 	return read, nil
@@ -119,7 +144,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 
 		bufLen += n
-		readN, err := request.parse(buf[:bufLen+n])
+		readN, err := request.parse(buf[:bufLen])
 		if err != nil {
 			return nil, err
 		}
