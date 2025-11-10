@@ -14,19 +14,19 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers.Get("Host"))
 	assert.Equal(t, 25, n)
 	assert.True(t, done)
 
 	// Test: Valid multi header
 	headers = NewHeaders()
-	data = []byte("Host: localhost:42069\r\nContent-Type: application/json\r\nContent-Length: 42069\r\n\r\n")
+	data = []byte("HoSt: localhost:42069\r\nContent-Type: application/json\r\nContent-Length: 42069\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
-	assert.Equal(t, "application/json", headers["Content-Type"])
-	assert.Equal(t, "42069", headers["Content-Length"])
+	assert.Equal(t, "localhost:42069", headers.Get("Host"))
+	assert.Equal(t, "application/json", headers.Get("Content-Type"))
+	assert.Equal(t, "42069", headers.Get("Content-Length"))
 	assert.Equal(t, 80, n)
 	assert.True(t, done)
 
@@ -37,4 +37,13 @@ func TestHeaderParse(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
+
+	// Test: Invalid - field name not a token
+	headers = NewHeaders()
+	data = []byte("	  	 Ho@st: localhost:24069	   	     \r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.Error(t, err)
+	assert.Equal(t, 0, n)
+	assert.False(t, done)
+
 }

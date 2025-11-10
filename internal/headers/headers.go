@@ -3,12 +3,38 @@ package headers
 import (
 	"bytes"
 	"fmt"
+	"strings"
 )
 
-type Headers map[string]string
+func isToken(str []byte) bool {
+	for _, ch := range str {
+		found := false
+		if ch >= 'A' && ch <= 'Z' ||
+			ch >= 'a' && ch <= 'z' ||
+			ch >= '0' && ch <= '9' {
+			found = true
+		}
+		switch ch {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			found = true
+		}
 
-func NewHeaders() Headers {
-	return make(Headers)
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+type Headers struct {
+	headers map[string]string
+}
+
+func NewHeaders() *Headers {
+	return &Headers{
+		headers: map[string]string{},
+	}
 }
 
 var MALFORMED_FIELD_LINE = fmt.Errorf("Malformed Field Line")
@@ -32,7 +58,15 @@ func parseHeader(fieldLine []byte) (string, string, error) {
 
 var SEPARATOR = []byte("\r\n")
 
-func (h Headers) Parse(data []byte) (int, bool, error) {
+func (h *Headers) Get(name string) string {
+	return h.headers[strings.ToLower(name)]
+}
+
+func (h *Headers) Set(name, value string) {
+	h.headers[strings.ToLower(name)] = value
+}
+
+func (h *Headers) Parse(data []byte) (int, bool, error) {
 	// No CLRF means we are awaiting data
 	read := 0
 	done := false
@@ -55,8 +89,12 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 			return 0, done, err
 		}
 
+		if !isToken([]byte(name)) {
+			return 0, false, MALFORMED_FIELD_NAME
+		}
+
 		read += idx + len(SEPARATOR)
-		h[name] = value
+		h.Set(name, value)
 	}
 
 	return read, done, nil
