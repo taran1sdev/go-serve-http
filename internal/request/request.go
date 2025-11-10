@@ -25,7 +25,7 @@ type Request struct {
 
 func newRequest() *Request {
 	return &Request{
-		State: 0,
+		State: StateInit,
 	}
 }
 
