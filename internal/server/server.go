@@ -1,17 +1,39 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
 
+	"boot.taran1s/internal/request"
 	"boot.taran1s/internal/response"
 )
 
 type Server struct {
-	closed bool
+	listener net.Listener
+	handler  Handler
+	closed   bool
 }
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message    string
+}
+
+func (h *HandlerError) Write(conn net.Conn) {
+	response.WriteStatusLine(conn, h.StatusCode)
+
+	b := []byte(h.Message)
+
+	head := response.GetDefaultHeaders(len(b))
+
+	response.WriteHeaders(conn, head)
+	response.WriteBody(conn, b)
+}
+
+type Handler func(w io.Writer, req *request.Request) *HandlerError
 
 func runConnection(s *Server, conn io.ReadWriteCloser) {
 
@@ -43,18 +65,54 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) listen() {
-
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			if s.closed {
+				return
+			}
+			log.Printf("Error accepting connection: %v", err)
+			continue
+		}
+		go s.handle(conn)
+	}
 }
 
-func Serve(port uint16) (*Server, error) {
-	server := &Server{closed: false}
+func (s *Server) handle(conn net.Conn) {
+	defer conn.Close()
+	req, err := request.RequestFromReader(conn)
+	if err != nil {
+		hErr := &HandlerError{
+			StatusCode: response.StatusBadRequest,
+			Message:    err.Error(),
+		}
+		hErr.Write(conn)
+	}
+	buf := bytes.NewBuffer([]byte{})
+	hErr := s.handler(buf, req)
+	if hErr != nil {
+		hErr.Write(conn)
+		return
+	}
+	b := buf.Bytes()
+	response.WriteStatusLine(conn, response.StatusOK)
+	headers := response.GetDefaultHeaders(len(b))
+	response.WriteHeaders(conn, headers)
+	response.WriteBody(conn, b)
+	return
+}
 
+func Serve(port uint16, handler Handler) (*Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		log.Fatal("Failed to start server on port", err)
+		return nil, err
 	}
 
-	go runServer(server, listener)
+	s := &Server{
+		handler:  handler,
+		listener: listener,
+	}
 
-	return server, nil
+	go s.listen()
+	return s, nil
 }
