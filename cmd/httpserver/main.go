@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net/http"
@@ -68,6 +69,7 @@ func proxyRequest(w *response.Writer, endpoint string) {
 		w.WriteHeaders(h)
 		w.WriteBody(body)
 	}
+	tr := response.GetDefaultTrailers()
 
 	w.WriteStatusLine(response.StatusOK)
 	h.Delete("Content-Length")
@@ -75,15 +77,33 @@ func proxyRequest(w *response.Writer, endpoint string) {
 	h.Replace("Content-Type", "text/plain")
 	w.WriteHeaders(h)
 
+	fullBody := []byte{}
+	bodyLen := 0
 	for {
 		data := make([]byte, 1024)
-		_, err := resp.Body.Read(data)
+		n, err := resp.Body.Read(data)
 		if err != nil {
 			break
 		}
-		w.WriteChunkedBody(data)
+		fullBody = append(fullBody, data[:n]...)
+		l, err := w.WriteChunkedBody(data)
+		if err != nil {
+			// handle error
+			break
+		}
+		bodyLen += l
 	}
-	w.WriteChunkedBodyDone()
+	l, err := w.WriteChunkedBodyDone()
+	if err != nil {
+		// handle error
+	}
+
+	bodyLen += l
+
+	tr.Replace("X-Content-SHA256", fmt.Sprintf("%x", sha256.Sum256(fullBody)))
+	tr.Replace("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+
+	w.WriteTrailers(tr)
 	return
 }
 

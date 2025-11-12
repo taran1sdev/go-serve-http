@@ -30,10 +30,11 @@ func (sc StatusCode) String() string {
 type responseState int
 
 const (
-	stateStatus  responseState = 0
-	stateHeaders responseState = 1
-	stateBody    responseState = 2
-	stateDone    responseState = 3
+	stateStatus   responseState = 0
+	stateHeaders  responseState = 1
+	stateBody     responseState = 2
+	stateTrailers responseState = 3
+	stateDone     responseState = 4
 )
 
 type Writer struct {
@@ -69,6 +70,14 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	h.Set("Content-Length", strconv.Itoa(contentLen))
 	h.Set("Connection", "close")
 	h.Set("Content-type", "text/plain")
+	return *h
+}
+
+func GetDefaultTrailers() headers.Headers {
+	h := headers.NewHeaders()
+
+	h.Set("X-Content-SHA256", "")
+	h.Set("X-Content-Length", "")
 	return *h
 }
 
@@ -138,5 +147,21 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 		return 0, fmt.Errorf("Failed to write end of chunked data to body")
 	}
 
+	w.writerState = stateTrailers
 	return bytes, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	for k, v := range h.GetAll() {
+		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s\r\n", k, v)))
+		if err != nil {
+			return fmt.Errorf("Failed to write trailers")
+		}
+	}
+	_, err := w.writer.Write([]byte("\r\n"))
+	if err != nil {
+		return fmt.Errorf("Failed to write end of request")
+	}
+	w.writerState = stateDone
+	return nil
 }
