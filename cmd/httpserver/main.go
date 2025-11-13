@@ -82,6 +82,8 @@ func proxyRequest(w *response.Writer, endpoint string) {
 	w.WriteStatusLine(response.StatusOK)
 	h.Delete("Content-Length")
 	h.Set("Transfer-Encoding", "chunked")
+	h.Set("Trailer", "X-Content-SHA256")
+	h.Set("Trailer", "X-Content-Length")
 	h.Replace("Content-Type", "text/plain")
 	w.WriteHeaders(h)
 
